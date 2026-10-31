@@ -19,6 +19,7 @@ Demo video: https://youtu.be/JEI0bmbcsGw
 - [Raspberry Pi ↔ Arduino serial protocol](#raspberry-pi--arduino-serial-protocol)
 - [Cloud data model](#cloud-data-model)
 - [Fleet portal](#fleet-portal)
+- [Demonstration video](#demonstration-video)
 - [Setup and running](#setup-and-running)
 - [Known limitations](#known-limitations)
 - [Project history](#project-history)
@@ -196,6 +197,18 @@ Vehicles rank by total points, and ties go to the higher sum of shift scores.
 
 The portal marks a vehicle `offline` if its status has not changed for 5 minutes.
 
+## Demonstration video
+
+[YouTube, 87 s](https://youtu.be/JEI0bmbcsGw). It shows three parts:
+
+1. **Detection, 0–42 s.** A desktop window titled "INJINN Fleet Edge (bus_3)" shows the camera feed with the EAR/MAR, score and pitch/yaw overlay. Next to it, a phone shows the owner portal. The driver acts out distraction, microsleep and a yawn. The on-screen score falls 100 → 97 → 87 → 85 → 82 → 72, which matches the penalties in the table above (−3, −10, −2, −3, −10). Bus 3's portal state changes to `distracted` or `drowsy` with each alert.
+2. **Camera tilt, 42–72 s.** The person crouches and stands in front of the unit, and the servo tilts the webcam to follow their face. The OLED shows the live score, which changes from 70 to 60 during this segment.
+3. **SOS, 75–84 s.** Pressing the yellow button changes Bus 1 to `EMERGENCY` on the owner portal, and its map marker pulses.
+
+![Microsleep alert with owner portal](docs/images/microsleep-demo.jpg)
+
+![SOS button and portal emergency state](docs/images/sos-demo.jpg)
+
 ## Setup and running
 
 ### Raspberry Pi
@@ -225,6 +238,7 @@ Treat this as a classroom prototype, not a deployable product.
 - **Map position**: the portal ignores the reported coordinates and places every vehicle at a fixed point on the IUT campus.
 - **Security**: the Firebase database is open, and the portal's logins are checked in client-side JavaScript. Anyone with the URL can read the fleet data or send pings.
 - **Thresholds**: the EAR, MAR and head-pose thresholds were set by hand and tested on team members only. No accuracy or false-alarm measurements were recorded.
+- **Preview window**: the `main.py` in this repo draws the overlay but never calls `cv2.imshow`, so it shows no window. The "INJINN Fleet Edge (bus_N)" window in the demo video comes from a desktop build that is not committed.
 - **Bugs in `main.py`**:
   - `get_cloud_score()` runs before `STATUS_URL` is defined. Its bare `except` hides the error, and the score is set to 100 right after anyway, so the cloud score is never restored after a restart.
   - `listen_for_commands` and `listen_for_arduino_sos` start before the serial port opens. Errors are swallowed, so the first ping can be lost.
