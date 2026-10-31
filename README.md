@@ -8,9 +8,9 @@ Course project for **EEE 4518: Electrical and Electronic Workshop**, Department 
 
 ![Prototype](docs/images/prototype.jpg)
 
-**Demo video:** https://youtu.be/JEI0bmbcsGw  ·  **Portal demo:** https://yasinsaad.github.io/EEE4518-Team_Injinn/
+**Demo video:** https://youtu.be/JEI0bmbcsGw  ·  **Live portal:** https://marvelous-dolphin-44656c.netlify.app/
 
-> **Status:** the project ended with the course and its Firebase backend has been shut down. The portal demo runs on simulated fleet data in the browser. This repository documents the system; to run the full system, set up your own Firebase project (see [Quick start](#quick-start)).
+> **Status:** the project ended with the course and its Firebase backend has been shut down. The portal in this repository runs on simulated fleet data in the browser (demo mode). This repository documents the system; to run the full system, set up your own Firebase project (see [Quick start](#quick-start)).
 
 ## Contents
 
@@ -67,8 +67,6 @@ arduino/injinn_firmware/
 portal/
   index.html              Single-file fleet portal
   demo-data.js            Simulated fleet that stands in for the retired Firebase backend
-.github/workflows/
-  pages.yml               Publishes portal/ to GitHub Pages
 prototypes/               Earlier development versions (see "Code history")
 docs/images/              Figures used in this README
 ```
@@ -200,9 +198,9 @@ fleet/
 
 ## Fleet portal
 
-Try it: https://yasinsaad.github.io/EEE4518-Team_Injinn/
+Live portal: https://marvelous-dolphin-44656c.netlify.app/
 
-The hosted portal runs in **demo mode**. `demo-data.js` intercepts the portal's Firebase requests and answers them from a simulated fleet:
+The portal in `portal/` runs in **demo mode**. `demo-data.js` intercepts the portal's Firebase requests and answers them from a simulated fleet:
 - Bus 1 and Bus 2 are driving and log random incidents, using the real incident types and penalties.
 - Bus 3 is offline.
 - Pressing PING puts the target vehicle into `EMERGENCY` for a few seconds.
@@ -309,7 +307,7 @@ The code was cleaned up after the course ended. Detection logic, thresholds, pen
 - Portal:
   - Header comment added.
   - Leftover analytics tag from an earlier host removed.
-  - Demo mode (`demo-data.js`) added, and the portal is hosted on GitHub Pages.
+  - Demo mode (`demo-data.js`) added.
 - Files moved into `raspberry-pi/`, `arduino/` and `portal/`.
 
 The original code is in the repository's first commit.
