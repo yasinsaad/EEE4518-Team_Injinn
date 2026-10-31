@@ -1,3 +1,11 @@
+"""
+Prototype 2: first Firebase version.
+
+Writes status and incidents to fleet/bus_1. Detects microsleep (eyes closed
+> 2 s, -10) and repeated long blinks (two consecutive 1-2 s blinks, -5).
+No yawn or distraction detection yet.
+"""
+
 import cv2
 import mediapipe as mp
 import math

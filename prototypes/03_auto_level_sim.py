@@ -1,3 +1,11 @@
+"""
+Prototype 3: simulated camera levelling.
+
+Same as 05_pc_demo.py plus a levelling loop that keeps the eye-corner midpoint
+inside a 0.45-0.55 vertical band by adjusting a 0-1 value. Drives no hardware;
+raspberry-pi/main.py later replaced this with the servo controller.
+"""
+
 import cv2
 import mediapipe as mp
 import math

@@ -1,3 +1,11 @@
+"""
+Prototype 4: per-run shift numbering.
+
+Alternative shift handling: each run is numbered "Day N" or "Night N"
+(stored in session_counts.json) and the shift summary is written when the
+program exits, instead of at 06:00/18:00.
+"""
+
 import cv2
 import mediapipe as mp
 import math

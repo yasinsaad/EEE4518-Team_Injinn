@@ -1,3 +1,10 @@
+"""
+Prototype 1: blink counter.
+
+First test of the MediaPipe Tasks API. Counts blinks (EAR < 0.25 for at least
+2 frames) and shows the EAR. No alerts, scoring or cloud sync.
+"""
+
 import cv2
 import mediapipe as mp
 import math

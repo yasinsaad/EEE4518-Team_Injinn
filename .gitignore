@@ -1,0 +1,19 @@
+# Created at runtime by the Python scripts
+bus_id.txt
+session_counts.json
+face_landmarker.task
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Arduino build output
+build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

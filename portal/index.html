@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<!--
+  INJINN Fleet Portal
+  Single-page dashboard for the INJINN driver-monitoring units.
+
+  - Polls Firebase Realtime Database (fleet.json) once per second.
+  - Owner login (admin / admin): fleet list, live map, PING button,
+    per-vehicle incident chart and leaderboard.
+  - Driver login (<bus_id> / driver): own score, state, map and shift history.
+  - Logins are checked in the browser and are for demonstration only.
+  - Map positions use a fixed point (IUT campus) set by DEMO_LAT / DEMO_LNG.
+
+  Configuration: set FIREBASE_URL and FIREBASE_BASE in the <script> block.
+  Hosting: any static host (deployed on Netlify), or open the file directly.
+-->
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INJINN Fleet Portal</title>
+  
+  <script src="https://cdn.tailwindcss.com/"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    :root {
+      --sidebar-bg: #1e3a8a; 
+      --content-bg: #f3f4f6; 
+      --card-bg: #ffffff; 
+      --text-primary: #1f2937; 
+      --accent-blue: #3b82f6; 
+    }
+
+    body { font-family: 'Inter', sans-serif; background-color: var(--content-bg); color: var(--text-primary); }
+    .sidebar { background-color: var(--sidebar-bg); color: white; }
+    .sidebar-link { display: flex; align-items: center; padding: 0.85rem 1rem; border-radius: 0.5rem; transition: all 0.2s; color: rgba(255, 255, 255, 0.7); font-weight: 500; }
+    .sidebar-link:hover { background-color: rgba(255, 255, 255, 0.1); color: white; }
+    .sidebar-link.active { background-color: rgba(255, 255, 255, 0.15); color: white; border-left: 4px solid #60a5fa; }
+    .sidebar-link i { margin-right: 0.75rem; }
+    .card { background-color: var(--card-bg); border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+    @media (min-width: 1024px) { .card { padding: 1.5rem; } }
+    
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+    .ping-marker { position: relative; }
+    .ping-marker::after { content: ''; position: absolute; width: 30px; height: 30px; background: rgba(239, 68, 68, 0.6); border-radius: 50%; top: -9px; left: -9px; animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; }
+    @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+
+    /* Clean Accordion styles */
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet">
+</head>
+<body class="h-[100dvh] w-full flex overflow-hidden">
+  
+  <div id="start-overlay" class="fixed inset-0 z-[100] bg-gray-900 bg-opacity-95 flex flex-col justify-center items-center cursor-pointer transition-opacity duration-300" onclick="initSystem()">
+    <i data-lucide="power" class="text-blue-500 mb-4 animate-pulse" width="64" height="64"></i>
+    <h2 class="text-white font-bold tracking-widest uppercase text-lg md:text-xl text-center px-4">Tap to Initialize Command Center</h2>
+  </div>
+
+  <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden transition-opacity" onclick="toggleSidebar()"></div>
+
+  <div class="flex w-full h-full relative">
+    
+    <aside id="app-sidebar" class="sidebar w-64 absolute inset-y-0 left-0 transform -translate-x-full lg:relative lg:translate-x-0 transition-transform duration-300 ease-in-out z-50 hidden flex-col shadow-2xl lg:shadow-none">
+      <div class="p-6 flex items-center justify-between space-x-3 mb-2 border-b border-blue-800/50 lg:border-none">
+        <div class="flex items-center space-x-3">
+            <i data-lucide="crosshair" class="w-8 h-8 text-blue-400"></i>
+            <span class="text-2xl font-black tracking-widest uppercase">INJINN</span>
+        </div>
+        <button onclick="toggleSidebar()" class="lg:hidden text-blue-300 hover:text-white"><i data-lucide="x"></i></button>
+      </div>
+      
+      <nav class="flex-1 px-4 py-4 space-y-2 overflow-y-auto custom-scrollbar">
+        <div class="pt-2 pb-2 text-xs font-bold text-blue-300/50 uppercase tracking-widest">Core Systems</div>
+        <button onclick="switchOwnerTab('map')" id="side-map" class="w-full text-left sidebar-link active"><i data-lucide="map"></i> Live Fleet Map</button>
+        <button onclick="switchOwnerTab('analytics')" id="side-analytics" class="w-full text-left sidebar-link hidden"><i data-lucide="bar-chart-2"></i> Analytics</button>
+      </nav>
+
+      <div class="p-4 border-t border-blue-800/50">
+        <button onclick="logout()" class="w-full text-left sidebar-link text-red-300 hover:bg-red-900/40 hover:text-red-100 transition-colors">
+          <i data-lucide="log-out"></i> System Logout
+        </button>
+      </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-100 relative">
+      
+      <header id="app-header" class="hidden bg-white border-b border-gray-200 p-3 md:p-4 flex justify-between items-center shadow-sm z-10 flex-shrink-0">
+        <div class="flex items-center">
+          <button onclick="toggleSidebar()" class="lg:hidden mr-3 p-1 rounded-md hover:bg-gray-100 text-gray-600 transition-colors"><i data-lucide="menu" class="w-6 h-6"></i></button>
+          <span class="hidden sm:inline text-gray-400 font-semibold uppercase tracking-widest text-xs">Network:</span>
+          <i data-lucide="wifi" class="w-4 h-4 mx-1 md:mx-2 text-green-500"></i>
+          <span class="font-bold text-green-600 text-xs tracking-widest uppercase">Secure</span>
+        </div>
+        <div class="flex items-center space-x-2 md:space-x-4">
+          <span id="header-user-role" class="text-[10px] md:text-xs font-black tracking-widest text-blue-700 uppercase bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-full">ADMIN</span>
+        </div>
+      </header>
+
+      <div class="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar relative">
+        
+        <div id="login-view" class="flex flex-col items-center justify-center h-full absolute inset-0 bg-gray-100 z-50 p-4">
+            <div class="card w-full max-w-md p-6 md:p-8 flex flex-col items-center shadow-xl border border-gray-200">
+                <div class="p-4 bg-blue-50 border border-blue-100 rounded-full mb-6">
+                    <i data-lucide="shield" class="text-blue-600 w-10 h-10 md:w-12 md:h-12"></i>
+                </div>
+                <h1 class="text-2xl md:text-3xl font-black text-gray-800 tracking-widest uppercase mb-6 md:mb-8 text-center">INJINN PORTAL</h1>
+                <div class="w-full space-y-4 md:space-y-5">
+                    <div>
+                        <label class="block text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest mb-1 md:mb-2">Access ID</label>
+                        <input id="username" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 font-medium text-sm md:text-base" placeholder="admin or bus_1">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest mb-1 md:mb-2">Passcode</label>
+                        <input id="password" type="password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 font-medium text-sm md:text-base" placeholder="admin or driver">
+                    </div>
+                    <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 md:py-3.5 rounded-lg tracking-widest uppercase transition-all shadow-md hover:shadow-lg mt-2 text-sm md:text-base">Authenticate</button>
+                    <p id="login-err" class="text-red-500 text-xs md:text-sm text-center font-semibold hidden"></p>
+                </div>
+            </div>
+        </div>
+
+        <div id="owner-view" class="hidden flex flex-col h-full space-y-4 md:space-y-6">
+            <div id="owner-map-container" class="flex-1 flex flex-col lg:flex-row gap-4 md:gap-6 min-h-0">
+                <div class="card w-full lg:w-1/3 flex flex-col h-[40dvh] lg:h-full overflow-hidden border border-gray-200">
+                    <div class="flex justify-between items-center mb-3 border-b border-gray-100 pb-3">
+                        <h3 class="text-xs md:text-sm font-bold text-gray-800 uppercase tracking-widest">Active Fleet</h3>
+                        <p id="owner-sync-time" class="text-[10px] md:text-xs font-semibold text-gray-400">--:--:--</p>
+                    </div>
+                    <div id="fleet-list" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1"></div>
+                </div>
+                <div class="card w-full lg:w-2/3 flex-1 h-[50dvh] lg:h-full p-0 overflow-hidden border border-gray-200 relative flex-shrink-0">
+                    
+                    <div class="absolute top-2 right-2 md:top-4 md:left-4 z-[9999] flex flex-col md:flex-row items-end md:items-start gap-2 pointer-events-none">
+                        <div class="bg-white/95 backdrop-blur px-3 py-2 md:px-4 md:py-2 rounded shadow-lg border border-gray-200 pointer-events-auto">
+                            <h3 id="map-title" class="text-[10px] md:text-xs font-bold text-gray-800 uppercase tracking-widest">Global Live Tracking</h3>
+                        </div>
+                        <button id="show-all-btn" onclick="showAllBusesOnMap()" class="hidden pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-lg border border-blue-700 text-[10px] md:text-xs font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1.5">
+                            <i data-lucide="globe" class="w-3 h-3 md:w-4 md:h-4"></i> SHOW ALL
+                        </button>
+                    </div>
+                    
+                    <div id="owner-map" class="w-full h-full z-0"></div>
+                </div>
+            </div>
+
+            <div id="owner-analytics-container" class="hidden flex-1 flex-col lg:flex-row gap-4 md:gap-6 min-h-0">
+                <div class="card w-full lg:w-1/2 flex flex-col h-[40dvh] lg:h-full border border-gray-200">
+                    <h3 id="chart-title" class="text-xs md:text-sm font-bold text-gray-800 uppercase tracking-widest mb-4">INCIDENT BREAKDOWN: FLEET</h3>
+                    <div class="flex-1 relative min-h-0"><canvas id="incidentChart"></canvas></div>
+                </div>
+                <div class="card w-full lg:w-1/2 flex flex-col h-[50dvh] lg:h-full overflow-hidden border border-gray-200">
+                    <h3 class="text-xs md:text-sm font-bold text-gray-800 uppercase tracking-widest mb-1">Driver Ranking Leaderboard</h3>
+                    <p class="text-[10px] md:text-xs text-gray-500 mb-3 border-b border-gray-100 pb-2">Ranked by Total Safety Points (Ties broken by Lifetime Score)</p>
+                    <div id="leaderboard" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="driver-view" class="hidden flex flex-col h-full space-y-4 md:space-y-6">
+            <div class="flex flex-col md:flex-row gap-4 md:gap-6 flex-shrink-0">
+                <div class="card w-full md:w-2/3 flex items-center justify-between border border-gray-200">
+                    <div>
+                        <h2 class="text-lg md:text-2xl font-black text-gray-800 uppercase tracking-widest">TERMINAL: <span id="driver-id" class="text-blue-600">BUS_1</span></h2>
+                        <div id="session-label" class="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Current Shift: Pending</div>
+                    </div>
+                    <button onclick="toggleSound()" class="p-2 md:p-3 bg-gray-100 rounded-full hover:bg-gray-200 border border-gray-200 transition-colors">
+                        <i id="vol-on" data-lucide="volume-2" class="text-blue-600 w-5 h-5 md:w-6 md:h-6"></i>
+                        <i id="vol-off" data-lucide="volume-x" class="text-red-500 hidden w-5 h-5 md:w-6 md:h-6"></i>
+                    </button>
+                </div>
+                <div class="card w-full md:w-1/3 flex items-center justify-between border border-gray-200">
+                    <div>
+                        <h3 class="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-widest mb-0.5 md:mb-1">Live Score</h3>
+                        <p id="driver-score" class="text-4xl md:text-5xl font-black text-green-500 transition-colors">100</p>
+                    </div>
+                    <div id="driver-status-circle" class="p-3 md:p-4 bg-green-100 rounded-full transition-all duration-300 shadow-inner flex-shrink-0">
+                        <i id="driver-icon" data-lucide="shield-check" class="text-green-600 w-8 h-8 md:w-12 md:h-12"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 flex flex-col lg:flex-row gap-4 md:gap-6 min-h-0">
+                <div class="card w-full lg:w-1/3 p-0 overflow-hidden h-[30dvh] lg:h-full flex flex-col border border-gray-200 relative flex-shrink-0">
+                    <div class="absolute top-2 right-2 md:top-4 md:left-4 z-[9999] bg-white/95 backdrop-blur px-2 py-1 md:px-3 md:py-1.5 rounded shadow-lg border border-gray-200">
+                        <h3 class="text-[9px] md:text-[10px] font-bold text-gray-800 uppercase tracking-widest">Live Routing</h3>
+                    </div>
+                    <div id="driver-map" class="flex-1 w-full bg-gray-100 z-0"></div>
+                </div>
+                
+                <div class="card w-full lg:w-2/3 flex flex-col flex-1 min-h-[40dvh] lg:h-full overflow-hidden border border-gray-200">
+                    <div class="flex justify-between items-center mb-3 border-b border-gray-100 pb-3 flex-shrink-0">
+                        <h3 class="text-xs md:text-sm font-bold text-gray-800 uppercase tracking-widest flex items-center"><i data-lucide="file-text" class="w-3 h-3 md:w-4 md:h-4 mr-1.5 md:mr-2"></i> Shift History &amp; Details</h3>
+                        <span id="driver-sync-time" class="text-[10px] md:text-xs font-semibold text-gray-400">--:--:--</span>
+                    </div>
+                    <div id="driver-history" class="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2 pb-4"></div>
+                </div>
+            </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+    // Firebase Realtime Database: whole fleet, and base path for per-bus writes
+    const FIREBASE_URL = "https://injinn-5dab3-default-rtdb.firebaseio.com/fleet.json";
+    const FIREBASE_BASE = "https://injinn-5dab3-default-rtdb.firebaseio.com/fleet/";
+    
+    // --- DEMO CONFIGURATIONS ---
+    const OFFLINE_TIMEOUT_MS = 300000; // 5 minutes 
+    const DEMO_LAT = 23.9481; // Hardcoded IUT Gazipur Latitude
+    const DEMO_LNG = 90.3792; // Hardcoded IUT Gazipur Longitude
+    
+    let busActivityTracker = {}; 
+    let mapFocusBusId = null; // Tracks which bus is solo-viewed on the map
+
+    let ownerMap, driverMap, chartInstance;
+    let ownerMarkers = {}, routeHistory = {}, routeLines = {};
+    let driverMarker = null;
+    let fetchInterval, currentRole = null, previousDriverState = 'active';
+    let audioCtx = null, soundEnabled = true;
+    let selectedDriverAnalytics = null, latestFleetData = null;
+
+    // --- ACCORDION STATE TRACKING ---
+    let lastHistoryState = null;
+    let openAccordions = new Set();
+
+    function initSystem() { 
+        document.getElementById('start-overlay').classList.add('opacity-0', 'pointer-events-none'); 
+        setTimeout(() => document.getElementById('start-overlay').remove(), 300); 
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
+    }
+    
+    function toggleSidebar() {
+        const sidebar = document.getElementById('app-sidebar'), overlay = document.getElementById('sidebar-overlay');
+        if (sidebar.classList.contains('-translate-x-full')) { sidebar.classList.remove('-translate-x-full'); overlay.classList.remove('hidden'); } 
+        else { sidebar.classList.add('-translate-x-full'); overlay.classList.add('hidden'); }
+    }
+    
+    function toggleSound() { 
+        soundEnabled = !soundEnabled; 
+        document.getElementById('vol-on').classList.toggle('hidden'); 
+        document.getElementById('vol-off').classList.toggle('hidden'); 
+    }
+    
+    function triggerAlarm(freq=880, type='drowsy') {
+        if(soundEnabled && audioCtx) {
+            const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+            
+            if (type === 'speeding') osc.type = 'square';
+            else if (type === 'emergency') osc.type = 'triangle'; 
+            else osc.type = 'sawtooth';
+            
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            
+            if (type === 'emergency') {
+                osc.frequency.linearRampToValueAtTime(800, audioCtx.currentTime + 0.5); 
+            } else {
+                osc.frequency.exponentialRampToValueAtTime(freq/2, audioCtx.currentTime + 0.3);
+            }
+            
+            gain.gain.setValueAtTime(1, audioCtx.currentTime); 
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            
+            osc.connect(gain); gain.connect(audioCtx.destination); 
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+        }
+    }
+
+    // --- MAP FILTERING LOGIC ---
+    function focusBusOnMap(busId, lat, lng) {
+        mapFocusBusId = busId;
+        ownerMap.setView([lat, lng], 15);
+        document.getElementById('map-title').innerText = `TRACKING: ${busId.replace('_', ' ')}`;
+        
+        // Remove hidden and dynamically fix Flex classes so it displays properly on mobile
+        const showBtn = document.getElementById('show-all-btn');
+        showBtn.classList.remove('hidden');
+        showBtn.classList.add('flex'); 
+        
+        if (latestFleetData) updateOwnerDashboard(latestFleetData);
+    }
+
+    function showAllBusesOnMap() {
+        mapFocusBusId = null;
+        ownerMap.setView([DEMO_LAT, DEMO_LNG], 12);
+        document.getElementById('map-title').innerText = "Global Live Tracking";
+        
+        const showBtn = document.getElementById('show-all-btn');
+        showBtn.classList.add('hidden');
+        showBtn.classList.remove('flex');
+        
+        if (latestFleetData) updateOwnerDashboard(latestFleetData);
+    }
+
+    // --- AUTH ---
+    function handleLogin() {
+        const user = document.getElementById('username').value.trim().toLowerCase(), pass = document.getElementById('password').value.trim(), err = document.getElementById('login-err');
+        
+        if (user === 'admin' && pass === 'admin') {
+            err.classList.add('hidden'); 
+            document.getElementById('app-sidebar').classList.remove('hidden'); document.getElementById('app-sidebar').classList.add('flex');
+            document.getElementById('app-header').classList.remove('hidden'); document.getElementById('app-header').classList.add('flex');
+            document.getElementById('header-user-role').innerText = 'OWNER';
+            document.getElementById('side-analytics').classList.remove('hidden');
+            
+            showView('owner-view'); currentRole = 'owner';
+            initOwnerMap(); initChart(); startDataSync();
+            
+        } else if (user !== '' && pass === 'driver') {
+            err.classList.add('hidden'); 
+            document.getElementById('app-sidebar').classList.remove('hidden'); document.getElementById('app-sidebar').classList.add('flex');
+            document.getElementById('app-header').classList.remove('hidden'); document.getElementById('app-header').classList.add('flex');
+            document.getElementById('header-user-role').innerText = 'DRIVER';
+            document.getElementById('side-analytics').classList.add('hidden'); 
+            
+            showView('driver-view'); currentRole = user; previousDriverState = 'active';
+            document.getElementById('driver-id').innerText = user.toUpperCase();
+            setTimeout(initDriverMap, 100); startDataSync();
+        } else { err.classList.remove('hidden'); err.innerText = "Access Denied. Check credentials."; }
+    }
+
+    function logout() {
+        clearInterval(fetchInterval); currentRole = null; selectedDriverAnalytics = null; latestFleetData = null;
+        lastHistoryState = null; openAccordions.clear(); busActivityTracker = {}; mapFocusBusId = null;
+        
+        const sidebar = document.getElementById('app-sidebar');
+        sidebar.classList.add('hidden', '-translate-x-full'); sidebar.classList.remove('flex');
+        document.getElementById('sidebar-overlay').classList.add('hidden');
+        
+        const header = document.getElementById('app-header');
+        header.classList.add('hidden'); header.classList.remove('flex');
+
+        if(ownerMap) { ownerMap.remove(); ownerMap = null; ownerMarkers = {}; routeHistory = {}; routeLines = {}; }
+        if(driverMap) { driverMap.remove(); driverMap = null; driverMarker = null; }
+        if(chartInstance) { chartInstance.destroy(); chartInstance = null; }
+        
+        document.getElementById('username').value = ''; document.getElementById('password').value = ''; showView('login-view');
+        switchOwnerTab('map');
+    }
+
+    function showView(id) { 
+        ['login-view', 'owner-view', 'driver-view'].forEach(v => { const el = document.getElementById(v); if(el) el.classList.add('hidden'); }); 
+        const target = document.getElementById(id);
+        if(id === 'owner-view' || id === 'driver-view') { target.classList.remove('hidden'); target.classList.add('flex'); } 
+        else { target.classList.remove('hidden'); }
+        lucide.createIcons(); 
+    }
+
+    function switchOwnerTab(tab) {
+        if(currentRole !== 'owner') return;
+        const sideMap = document.getElementById('side-map'), sideAnalytics = document.getElementById('side-analytics');
+        if(tab === 'map') {
+            document.getElementById('owner-map-container').classList.remove('hidden'); document.getElementById('owner-map-container').classList.add('flex');
+            document.getElementById('owner-analytics-container').classList.remove('flex'); document.getElementById('owner-analytics-container').classList.add('hidden');
+            sideMap.classList.add('active'); sideAnalytics.classList.remove('active');
+            setTimeout(() => { if(ownerMap) ownerMap.invalidateSize(); }, 100);
+        } else {
+            document.getElementById('owner-map-container').classList.remove('flex'); document.getElementById('owner-map-container').classList.add('hidden');
+            document.getElementById('owner-analytics-container').classList.remove('hidden'); document.getElementById('owner-analytics-container').classList.add('flex');
+            sideAnalytics.classList.add('active'); sideMap.classList.remove('active');
+            if(latestFleetData) updateOwnerDashboard(latestFleetData);
+        }
+        if(window.innerWidth < 1024) toggleSidebar();
+    }
+    
+    function selectDriverAnalytics(busId) { selectedDriverAnalytics = busId; if(latestFleetData) updateOwnerDashboard(latestFleetData); }
+    function sendPing(busId) { fetch(`${FIREBASE_BASE}${busId}/command.json`, { method: 'PUT', body: JSON.stringify({trigger: true}) }).then(() => alert(`Emergency Signal Sent to ${busId.toUpperCase()}`)); }
+
+    // --- MAPS ---
+    function initOwnerMap() { 
+        ownerMap = L.map('owner-map', { zoomControl: false }).setView([DEMO_LAT, DEMO_LNG], 12); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {attribution: '&copy; OpenStreetMap, &copy; CARTO'}).addTo(ownerMap); 
+    }
+    function initDriverMap() { 
+        if(!driverMap) { 
+            driverMap = L.map('driver-map', { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView([DEMO_LAT, DEMO_LNG], 14); 
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {attribution: '&copy; OpenStreetMap, &copy; CARTO'}).addTo(driverMap); 
+        } 
+    }
+    
+    function getMapIcon(state) {
+        let isPing = (state === 'drowsy' || state === 'distracted' || state === 'EMERGENCY') ? 'ping-marker' : '';
+        let dotColor = state === 'active' ? '#3b82f6' : (state === 'speeding' ? '#f59e0b' : (state === 'offline' ? '#9ca3af' : '#ef4444'));
+        return L.divIcon({className: 'custom-div-icon', html: `<div class="${isPing}" style="width:14px;height:14px;background:${dotColor};border-radius:50%;box-shadow:0 0 10px ${dotColor};border: 2px solid white;"></div>`, iconSize: [14, 14], iconAnchor: [7, 7]});
+    }
+
+    // --- CHART.JS ---
+    function initChart() {
+        const ctx = document.getElementById('incidentChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: ['Microsleep', 'Yawning', 'Distraction', 'Speeding'], datasets: [{ label: 'Incidents', data: [0,0,0,0], backgroundColor: ['#ef4444', '#f87171', '#fca5a5', '#f59e0b'], borderColor: 'transparent', borderWidth: 0, borderRadius: 6 }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: '#e5e7eb' }, ticks: { font: {family: 'Inter'}, precision: 0 } }, x: { grid: { display: false }, ticks: { font: {family: 'Inter'} } } }, plugins: { legend: { display: false } } }
+        });
+    }
+
+    // --- DATA SYNC ---
+    function startDataSync() {
+        fetchInterval = setInterval(() => {
+            fetch(FIREBASE_URL).then(res => res.json()).then(data => {
+                if(!data) return;
+                latestFleetData = data; 
+                const timeStr = new Date().toLocaleTimeString();
+                
+                if (currentRole === 'owner') { updateOwnerDashboard(data); document.getElementById('owner-sync-time').innerText = timeStr; }
+                else if (data[currentRole]) { updateDriverDashboard(data[currentRole]); document.getElementById('driver-sync-time').innerText = timeStr; }
+            }).catch(e => {});
+        }, 1000); 
+    }
+
+    function updateOwnerDashboard(fleetData) {
+        const list = document.getElementById('fleet-list'), leaderboard = document.getElementById('leaderboard');
+        const listScroll = list.scrollTop, leadScroll = leaderboard.scrollTop; 
+        
+        list.innerHTML = ''; leaderboard.innerHTML = '';
+        let drivers = [];
+        let isAnyEmergency = false; 
+
+        Object.keys(fleetData).forEach(busId => {
+            const bus = fleetData[busId]; if (!bus.current_status) return;
+            
+            const currentDataStr = JSON.stringify(bus.current_status);
+            const nowMs = Date.now();
+            
+            if (!busActivityTracker[busId]) {
+                busActivityTracker[busId] = { data: currentDataStr, time: nowMs };
+            } else if (busActivityTracker[busId].data !== currentDataStr) {
+                busActivityTracker[busId].data = currentDataStr;
+                busActivityTracker[busId].time = nowMs;
+            }
+            
+            let state = bus.current_status.state;
+            if (state === 'EMERGENCY') isAnyEmergency = true;
+            
+            if (nowMs - busActivityTracker[busId].time > OFFLINE_TIMEOUT_MS) {
+                state = 'offline';
+                bus.current_status.speed_kmh = 0;
+            }
+            
+            const lat = DEMO_LAT;
+            const lng = DEMO_LNG;
+            const liveScore = bus.current_status.score;
+            
+            let totalPoints = 0; let lifetimeSum = 0;
+            if (bus.history) {
+                Object.values(bus.history).forEach(log => {
+                    if (log.event.includes("Shift Summary")) {
+                        const match = log.penalty.match(/\d+/);
+                        if (match) {
+                            const finalScore = parseInt(match[0]);
+                            lifetimeSum += finalScore; 
+                            if (finalScore >= 80) totalPoints += 3;
+                            else if (finalScore >= 56) totalPoints += 2;
+                            else if (finalScore >= 40) totalPoints += 1;
+                        }
+                    }
+                });
+            }
+            drivers.push({ id: busId, points: totalPoints, lifetimeScore: lifetimeSum, currentScore: liveScore });
+
+            let c = state === 'active' ? 'text-green-600 bg-green-100' : 
+                    (state === 'offline' ? 'text-gray-500 bg-gray-200' : 
+                    (state === 'EMERGENCY' ? 'text-white bg-red-600 animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.6)] font-black' : 
+                    (state === 'speeding' ? 'text-yellow-600 bg-yellow-100' : 'text-red-600 bg-red-100')));
+                    
+            let isMapFocused = (mapFocusBusId === busId);
+            let focusClasses = isMapFocused ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-blue-50';
+                    
+            list.innerHTML += `
+                <div class="bg-white border border-gray-100 shadow-sm rounded-lg p-2.5 md:p-3 flex justify-between items-center transition-all cursor-pointer ${focusClasses} ${state === 'offline' ? 'opacity-70' : ''}" onclick="focusBusOnMap('${busId}', ${lat}, ${lng})">
+                    <div class="flex-1 min-w-0 pr-2">
+                        <div class="font-bold text-gray-800 text-xs md:text-sm uppercase truncate">${busId.replace('_', ' ')}</div>
+                        <span class="inline-block mt-1 px-2 py-0.5 text-[8px] md:text-[10px] font-bold rounded-full ${c} uppercase tracking-wide truncate max-w-full">${state} | ${bus.current_status.speed_kmh} km/h</span>
+                    </div>
+                    <div class="flex items-center gap-2 md:gap-3 flex-shrink-0">
+                        <div class="text-right"><div class="text-base md:text-xl font-black text-blue-600">${liveScore}</div><div class="text-[8px] md:text-[9px] text-gray-400 font-bold uppercase tracking-widest">Live Score</div></div>
+                        <button onclick="event.stopPropagation(); sendPing('${busId}')" class="bg-red-50 hover:bg-red-500 text-red-500 hover:text-white border border-red-200 hover:border-red-500 px-2 md:px-3 py-1 md:py-1.5 text-[10px] md:text-xs font-bold rounded shadow-sm transition-all tracking-widest" ${state === 'offline' ? 'disabled style="cursor:not-allowed; opacity:0.5"' : ''}>PING</button>
+                    </div>
+                </div>`;
+
+            if (lat && lng) {
+                const isVisible = (mapFocusBusId === null || mapFocusBusId === busId);
+
+                if(!routeHistory[busId]) routeHistory[busId] = [];
+                routeHistory[busId].push([lat, lng]);
+                if(routeHistory[busId].length > 50) routeHistory[busId].shift(); 
+                
+                if(routeLines[busId]) ownerMap.removeLayer(routeLines[busId]);
+                routeLines[busId] = L.polyline(routeHistory[busId], {color: '#3b82f6', weight: 3, opacity: 0.6});
+                
+                if (isVisible) routeLines[busId].addTo(ownerMap);
+
+                const icon = getMapIcon(state);
+                if (ownerMarkers[busId]) { 
+                    ownerMarkers[busId].setLatLng([lat, lng]); 
+                    ownerMarkers[busId].setIcon(icon); 
+                } else { 
+                    ownerMarkers[busId] = L.marker([lat, lng], {icon: icon}); 
+                }
+                
+                if (isVisible) {
+                    if (!ownerMap.hasLayer(ownerMarkers[busId])) ownerMarkers[busId].addTo(ownerMap);
+                } else {
+                    if (ownerMap.hasLayer(ownerMarkers[busId])) ownerMap.removeLayer(ownerMarkers[busId]);
+                }
+            }
+        });
+
+        if (isAnyEmergency) {
+            triggerAlarm(1200, 'emergency');
+        }
+
+        if (!selectedDriverAnalytics && drivers.length > 0) {
+            drivers.sort((a,b) => { if(b.points !== a.points) return b.points - a.points; return b.lifetimeScore - a.lifetimeScore; });
+            selectedDriverAnalytics = drivers[0].id;
+        }
+
+        drivers.sort((a,b) => {
+            if(b.points !== a.points) return b.points - a.points; 
+            if(b.lifetimeScore !== a.lifetimeScore) return b.lifetimeScore - a.lifetimeScore; 
+            return b.currentScore - a.currentScore; 
+        }).forEach((d, i) => {
+            let isSelected = d.id === selectedDriverAnalytics;
+            let bgColor = isSelected ? 'bg-blue-50 border-blue-500' : (i === 0 ? 'bg-white border-yellow-400' : 'bg-white border-gray-200 hover:bg-gray-50');
+            
+            leaderboard.innerHTML += `
+                <div onclick="selectDriverAnalytics('${d.id}')" class="cursor-pointer border-l-4 ${bgColor} rounded-r-lg p-2.5 md:p-3 flex justify-between items-center shadow-sm transition-colors mb-2">
+                    <div class="flex-1">
+                        <span class="font-bold text-gray-700 uppercase tracking-widest text-xs md:text-sm truncate">#${i+1} ${d.id.replace('_',' ')}</span>
+                        <div class="text-[10px] text-gray-500 mt-0.5 font-semibold">Total Lifetime Score: <span class="text-blue-600">${d.lifetimeScore}</span></div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xl font-black text-blue-600">${d.points} <span class="text-[10px] text-gray-400 font-bold uppercase">PTS</span></span>
+                    </div>
+                </div>`;
+        });
+
+        if (selectedDriverAnalytics && fleetData[selectedDriverAnalytics]) {
+            let stats = { microsleep: 0, yawn: 0, distract: 0, speed: 0 };
+            let bus = fleetData[selectedDriverAnalytics];
+            if(bus.history) {
+                Object.values(bus.history).forEach(h => {
+                    if(h.event.includes("Microsleep")) stats.microsleep++;
+                    else if(h.event.includes("Yawn")) stats.yawn++;
+                    else if(h.event.includes("Distraction")) stats.distract++;
+                    else if(h.event.includes("Speeding")) stats.speed++;
+                });
+            }
+            if(chartInstance) { chartInstance.data.datasets[0].data = [stats.microsleep, stats.yawn, stats.distract, stats.speed]; chartInstance.update('none'); }
+            document.getElementById('chart-title').innerText = `BREAKDOWN: ${selectedDriverAnalytics.replace('_', ' ').toUpperCase()}`;
+        }
+        
+        list.scrollTop = listScroll; leaderboard.scrollTop = leadScroll;
+    }
+
+    function updateDriverDashboard(busData) {
+        if (!busData || !busData.current_status) return;
+        const status = busData.current_status;
+        
+        const currentDataStr = JSON.stringify(status);
+        const nowMs = Date.now();
+        
+        if (!busActivityTracker['DRIVER_VIEW']) {
+            busActivityTracker['DRIVER_VIEW'] = { data: currentDataStr, time: nowMs };
+        } else if (busActivityTracker['DRIVER_VIEW'].data !== currentDataStr) {
+            busActivityTracker['DRIVER_VIEW'].data = currentDataStr;
+            busActivityTracker['DRIVER_VIEW'].time = nowMs;
+        }
+        
+        let displayState = status.state;
+        if (nowMs - busActivityTracker['DRIVER_VIEW'].time > OFFLINE_TIMEOUT_MS) {
+            displayState = 'offline';
+        }
+        
+        if (driverMap) {
+            const loc = [DEMO_LAT, DEMO_LNG];
+            if (driverMarker) { driverMarker.setLatLng(loc); driverMarker.setIcon(getMapIcon(displayState)); } 
+            else { driverMarker = L.marker(loc, {icon: getMapIcon(displayState)}).addTo(driverMap); }
+            driverMap.panTo(loc, {animate: true});
+        }
+
+        const sEl = document.getElementById('driver-score'); sEl.innerText = status.score;
+        sEl.className = status.score > 80 ? "text-4xl md:text-5xl font-black text-green-500 transition-colors" : (status.score > 50 ? "text-4xl md:text-5xl font-black text-yellow-500 transition-colors" : "text-4xl md:text-5xl font-black text-red-500 transition-colors");
+        document.getElementById('session-label').innerText = `Shift: ${status.session || 'Pending'}`;
+        
+        const circle = document.getElementById('driver-status-circle'), icon = document.getElementById('driver-icon');
+        if (displayState !== previousDriverState) {
+            if (displayState === 'offline') {
+                circle.className = "p-3 md:p-4 bg-gray-200 rounded-full transition-all duration-300 shadow-inner flex-shrink-0";
+                icon.setAttribute('data-lucide', 'power-off'); icon.className = 'text-gray-500 w-8 h-8 md:w-12 md:h-12';
+            } else if (displayState === 'drowsy' || displayState === 'distracted' || displayState === 'EMERGENCY') {
+                circle.className = "p-3 md:p-4 bg-red-100 rounded-full transition-all duration-300 animate-pulse shadow-inner flex-shrink-0";
+                icon.setAttribute('data-lucide', 'alert-triangle'); icon.className = 'text-red-600 w-8 h-8 md:w-12 md:h-12';
+                if (displayState === 'EMERGENCY') triggerAlarm(1200, 'emergency');
+                else triggerAlarm(880, 'drowsy');
+            } else if (displayState === 'speeding') {
+                circle.className = "p-3 md:p-4 bg-yellow-100 rounded-full transition-all duration-300 shadow-inner flex-shrink-0";
+                icon.setAttribute('data-lucide', 'gauge'); icon.className = 'text-yellow-600 w-8 h-8 md:w-12 md:h-12';
+                triggerAlarm(1200, 'speeding');
+            } else {
+                circle.className = "p-3 md:p-4 bg-green-100 rounded-full transition-all duration-300 shadow-inner flex-shrink-0";
+                icon.setAttribute('data-lucide', 'shield-check'); icon.className = 'text-green-600 w-8 h-8 md:w-12 md:h-12';
+            }
+            lucide.createIcons(); previousDriverState = displayState;
+        } else if (displayState === 'EMERGENCY') {
+            triggerAlarm(1200, 'emergency');
+        }
+
+        const histContainer = document.getElementById('driver-history');
+        const currentHistoryState = JSON.stringify(busData.history || {}) + status.score + status.session;
+
+        if (currentHistoryState !== lastHistoryState) {
+            document.querySelectorAll('#driver-history details').forEach(el => {
+                if (el.open) openAccordions.add(el.dataset.title);
+                else openAccordions.delete(el.dataset.title);
+            });
+
+            if (busData.history) {
+                const rawHistory = Object.values(busData.history);
+                let sessionsGrouped = [];
+                let currentDetails = [];
+
+                rawHistory.forEach(log => {
+                    if (log.event.includes("Shift Summary")) {
+                        sessionsGrouped.push({ title: log.event, date: log.date, scoreText: log.penalty, details: [...currentDetails], isLive: false });
+                        currentDetails = [];
+                    } else {
+                        currentDetails.push(log);
+                    }
+                });
+
+                sessionsGrouped.push({ title: `Active Shift (${status.session || 'Pending'})`, date: "LIVE NOW", scoreText: `Score: ${status.score}`, details: [...currentDetails], isLive: true });
+
+                let finalHtml = '';
+                sessionsGrouped.reverse().forEach(session => {
+                    const bg = session.isLive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200 hover:bg-gray-50';
+                    const textCol = session.isLive ? 'text-blue-700' : 'text-gray-700';
+                    
+                    let detailsHtml = session.details.reverse().map(log => `
+                        <div class="flex justify-between items-center text-[10px] md:text-xs p-2 border-b border-gray-100 last:border-0 hover:bg-gray-100">
+                            <div><span class="font-bold text-gray-600">${log.event}</span><span class="text-gray-400 ml-2 font-semibold">${log.time}</span></div>
+                            <span class="font-black text-red-500">${log.penalty}</span>
+                        </div>
+                    `).join('');
+
+                    if (session.details.length === 0) detailsHtml = `<div class="p-3 text-[10px] md:text-xs text-gray-400 font-semibold text-center uppercase tracking-widest">No incidents recorded.</div>`;
+
+                    let isOpen = openAccordions.has(session.title) || (session.isLive && lastHistoryState === null);
+
+                    finalHtml += `
+                        <details data-title="${session.title}" class="mb-3 ${bg} border rounded-lg shadow-sm overflow-hidden group transition-all" ${isOpen ? 'open' : ''}>
+                            <summary class="p-3 cursor-pointer outline-none flex justify-between items-center">
+                                <div>
+                                    <div class="font-bold ${textCol} text-xs md:text-sm uppercase tracking-wide">${session.title}</div>
+                                    <div class="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-semibold mt-0.5">${session.date}</div>
+                                </div>
+                                <div class="flex items-center gap-2 md:gap-3">
+                                    <span class="font-black text-sm md:text-base ${session.isLive ? 'text-blue-600' : 'text-gray-700'}">${session.scoreText}</span>
+                                    <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform"></i>
+                                </div>
+                            </summary>
+                            <div class="bg-gray-50 border-t border-gray-100 p-1 md:p-2">
+                                ${detailsHtml}
+                            </div>
+                        </details>
+                    `;
+                });
+                
+                histContainer.innerHTML = finalHtml;
+                lucide.createIcons();
+            } else {
+                histContainer.innerHTML = `<div class="p-6 text-xs text-gray-400 text-center uppercase tracking-widest font-bold">No shifts recorded yet.</div>`;
+            }
+            lastHistoryState = currentHistoryState;
+        } else {
+            document.querySelectorAll('#driver-history details').forEach(el => {
+                if (el.open) openAccordions.add(el.dataset.title);
+                else openAccordions.delete(el.dataset.title);
+            });
+        }
+    }
+  </script>
+
+</body></html>

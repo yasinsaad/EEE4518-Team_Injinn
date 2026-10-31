@@ -1,26 +1,28 @@
 # INJINN: IoT-based Driving Safety Suite with Oculomotor
 
-Course project for **EEE 4518: Electrical and Electronic Workshop**, Department of EEE, Islamic University of Technology (IUT). Submitted 13 April 2026.
+A dashboard-mounted unit that watches the driver through a webcam and flags microsleep, yawning and distraction. It sounds a buzzer, shows a safety score on an OLED, and tilts the camera to keep the driver's face in frame. Each unit pushes its state, score and incident log to Firebase, and a web portal shows the whole fleet to an owner and each vehicle's own data to its driver.
 
-A dashboard-mounted unit watches the driver through a webcam and flags microsleep, yawning and distraction. The unit sounds a buzzer, shows a safety score on an OLED, and tilts the camera to keep the driver's face in frame. Each unit pushes its state, score and incident log to Firebase, and a web portal shows the whole fleet to an owner and each vehicle's own data to its driver.
+Course project for **EEE 4518: Electrical and Electronic Workshop**, Department of EEE, Islamic University of Technology (IUT), submitted 13 April 2026.
+
+**Stack:** Python, MediaPipe Face Landmarker, OpenCV, Raspberry Pi 4, Arduino Uno (C++), pySerial, Firebase Realtime Database (REST), HTML/JavaScript with Tailwind CSS, Leaflet and Chart.js, Netlify.
 
 ![Prototype](docs/images/prototype.jpg)
 
-Demo video: https://youtu.be/JEI0bmbcsGw
+**Demo video:** https://youtu.be/JEI0bmbcsGw  ·  **Live portal:** https://marvelous-dolphin-44656c.netlify.app/
 
 ## Contents
 
 - [Team](#team)
 - [System overview](#system-overview)
-- [Hardware](#hardware)
 - [Repository layout](#repository-layout)
+- [Quick start](#quick-start)
+- [Hardware](#hardware)
 - [Detection and scoring](#detection-and-scoring)
 - [Camera tilt control](#camera-tilt-control)
 - [Raspberry Pi ↔ Arduino serial protocol](#raspberry-pi--arduino-serial-protocol)
 - [Cloud data model](#cloud-data-model)
 - [Fleet portal](#fleet-portal)
 - [Demonstration video](#demonstration-video)
-- [Setup and running](#setup-and-running)
 - [Known limitations](#known-limitations)
 - [Project history](#project-history)
 
@@ -38,11 +40,11 @@ Demo video: https://youtu.be/JEI0bmbcsGw
 
 ![Block diagram](docs/images/block-diagram.png)
 
-| Layer | Runs on | File | Role |
+| Layer | Runs on | Code | Role |
 |---|---|---|---|
-| Vision and telemetry | Raspberry Pi 4 | `main.py` | Face landmark tracking, driver-state detection, scoring, camera tilt commands, Firebase sync |
-| Peripheral control | Arduino Uno | `main.ino` | Servo, buzzer, OLED score display, SOS button |
-| Fleet portal | Browser (hosted on Netlify) | `INJINN.html` | Owner and driver dashboards reading from Firebase |
+| Vision and telemetry | Raspberry Pi 4 | `raspberry-pi/main.py` | Face landmark tracking, driver-state detection, scoring, camera tilt commands, Firebase sync |
+| Peripheral control | Arduino Uno | `arduino/injinn_firmware/` | Servo, buzzer, OLED score display, SOS button |
+| Fleet portal | Browser | `portal/index.html` | Owner and driver dashboards reading from Firebase |
 
 Data flow:
 
@@ -51,6 +53,51 @@ Data flow:
 3. Every 0.5 s, `main.py` writes the vehicle's status to Firebase and sends the score to the Arduino for display.
 4. The portal polls Firebase every second. An owner can send a "ping" to a vehicle, which `main.py` picks up and relays to the buzzer.
 5. Pressing the SOS button makes the Arduino send `SOS_TRIGGERED`. `main.py` then sets the vehicle state to `EMERGENCY` and logs the event.
+
+## Repository layout
+
+```
+raspberry-pi/
+  main.py                 Edge unit: vision, scoring, servo control, serial and Firebase I/O
+  requirements.txt
+arduino/injinn_firmware/
+  injinn_firmware.ino     Servo, buzzer, OLED and SOS button firmware
+portal/
+  index.html              Single-file fleet portal
+prototypes/               Earlier development versions (see "Code history")
+docs/images/              Figures used in this README
+```
+
+## Quick start
+
+### Edge unit (Raspberry Pi, or any PC with a webcam)
+
+```bash
+cd raspberry-pi
+pip install -r requirements.txt
+python main.py --preview
+```
+
+- On first run, enter a vehicle ID such as `bus_1`. It is saved to `bus_id.txt`.
+- The MediaPipe model (`face_landmarker.task`) downloads automatically on first run.
+- `--preview` opens the annotated camera window; press `q` to quit. Omit it on the Pi to run headless, and stop with Ctrl+C.
+- `--port` sets the Arduino serial port (default `/dev/ttyACM0`; on Windows, for example, `--port COM5`). If no Arduino is found, the unit runs without the servo, buzzer, OLED and SOS button.
+- The script opens camera index 1 and falls back to index 0.
+- On exit, it writes `state: offline` to Firebase.
+
+### Arduino
+
+1. Install the **U8g2** library from the Arduino Library Manager. `Servo` and `Wire` come with the IDE.
+2. Open `arduino/injinn_firmware/injinn_firmware.ino`, select Arduino Uno, and upload.
+3. The OLED shows the INJINN start-up animation, then the score.
+
+### Portal
+
+Open `portal/index.html` in a browser, or deploy the `portal/` folder to any static host. Log in with the credentials in [Fleet portal](#fleet-portal).
+
+### Using your own Firebase project
+
+Set `FIREBASE_DB_URL` in `raspberry-pi/main.py`, and `FIREBASE_URL` and `FIREBASE_BASE` in `portal/index.html`. The code uses the REST API without authentication, so the database rules must allow public reads and writes to `fleet/`.
 
 ## Hardware
 
@@ -84,35 +131,9 @@ The webcam connects to the Raspberry Pi over USB and is mounted on the servo arm
 
 ![Enclosure print and early test rig](docs/images/build.jpg)
 
-## Repository layout
-
-```
-main.py          Vision pipeline, scoring, serial and Firebase I/O (Raspberry Pi, headless)
-main.ino         Arduino firmware: servo, buzzer, OLED, SOS button
-INJINN.html      Single-file fleet portal (Tailwind, Leaflet, Chart.js)
-pc/injinn_pc.py  Desktop version with a preview window, no Arduino (used in the demo video)
-prototypes/      Earlier development versions, see "Code history"
-docs/images/     Figures used in this README
-```
-
-`main.py` and `pc/injinn_pc.py` share the same detection, scoring and Firebase code. The differences:
-
-| | `main.py` | `pc/injinn_pc.py` |
-|---|---|---|
-| Target | Raspberry Pi + Arduino | Windows or any PC with a webcam |
-| Preview window | none | "INJINN Fleet Edge (bus_N)" |
-| Quit | Ctrl+C | `q` in the window |
-| Camera tilt, buzzer, OLED, SOS | yes, over serial | no |
-| Owner ping | Arduino buzzer + `winsound` | `winsound` beep + on-screen text |
-
-Files created at runtime by `main.py`:
-
-- `bus_id.txt` stores the vehicle ID (for example `bus_1`), which `main.py` asks for on first run.
-- `face_landmarker.task` is the MediaPipe model, downloaded automatically if it is missing.
-
 ## Detection and scoring
 
-Each shift starts at a score of 100. The shift is "Day" from 06:00 to 18:00 and "Night" otherwise. At a shift change, the score resets to 100 and a shift summary is logged.
+Each shift starts at a score of 100. The shift is "Day" from 06:00 to 18:00 and "Night" otherwise. At a shift change, the score resets to 100 and a shift summary is logged. If the unit restarts mid-shift, it resumes the score stored in Firebase.
 
 | Event | Condition | Penalty | Arduino code | Portal state |
 |---|---|---|---|---|
@@ -122,7 +143,7 @@ Each shift starts at a score of 100. The shift is "Day" from 06:00 to 18:00 and 
 | Speeding | estimated speed > 60 km/h | −1 per ~2 s | – | `speeding` |
 | SOS button | button press, 3 s debounce | none | – | `EMERGENCY` |
 
-After an alert fires, the same detector cannot fire again until the condition has held for another 5 s plus its hold time.
+After an alert fires, the same detector cannot fire again until the condition has held for another 5 s plus its hold time. All thresholds are constants at the top of `main.py`.
 
 Definitions:
 
@@ -158,7 +179,7 @@ The link runs at 9600 baud. Each message is one ASCII line ending in `\n`.
 
 ## Cloud data model
 
-The system uses a Firebase Realtime Database, accessed through its REST API without authentication:
+The system uses a Firebase Realtime Database, accessed through its REST API:
 
 ```
 fleet/
@@ -173,8 +194,6 @@ fleet/
 - **`command`**: the portal sets `trigger: true` to ping a vehicle. `main.py` polls this every 1.5 s, beeps, and resets it to `false`.
 
 ## Fleet portal
-
-Hosted at https://marvelous-dolphin-44656c.netlify.app/. You can also open `INJINN.html` directly in a browser.
 
 ![Portal screens](docs/images/portal-screens.jpg)
 
@@ -213,62 +232,23 @@ The portal marks a vehicle `offline` if its status has not changed for 5 minutes
 
 [YouTube, 87 s](https://youtu.be/JEI0bmbcsGw). It shows three parts:
 
-1. **Detection, 0–42 s.** `pc/injinn_pc.py` runs on a laptop in a window titled "INJINN Fleet Edge (bus_3)" shows the camera feed with the EAR/MAR, score and pitch/yaw overlay. Next to it, a phone shows the owner portal. The driver acts out distraction, microsleep and a yawn. The on-screen score falls 100 → 97 → 87 → 85 → 82 → 72, which matches the penalties in the table above (−3, −10, −2, −3, −10). Bus 3's portal state changes to `distracted` or `drowsy` with each alert.
-2. **Camera tilt, 42–72 s.** The person crouches and stands in front of the unit, and the servo tilts the webcam to follow their face. The OLED shows the live score, which changes from 70 to 60 during this segment.
+1. **Detection, 0–42 s.** The PC version (`prototypes/05_pc_demo.py`, now `main.py --preview`) runs on a laptop in a window titled "INJINN Fleet Edge (bus_3)". The window shows the camera feed with the EAR/MAR, score and pitch/yaw overlay. Next to it, a phone shows the owner portal. The driver acts out distraction, microsleep and a yawn. The on-screen score falls 100 → 97 → 87 → 85 → 82 → 72, which matches the penalties above (−3, −10, −2, −3, −10). Bus 3's portal state changes to `distracted` or `drowsy` with each alert.
+2. **Camera tilt, 42–72 s.** The person crouches and stands in front of the unit, and the servo tilts the webcam to follow their face. The OLED shows the live score.
 3. **SOS, 75–84 s.** Pressing the yellow button changes Bus 1 to `EMERGENCY` on the owner portal, and its map marker pulses.
 
 ![Microsleep alert with owner portal](docs/images/microsleep-demo.jpg)
 
 ![SOS button and portal emergency state](docs/images/sos-demo.jpg)
 
-## Setup and running
-
-### Raspberry Pi
-
-```bash
-pip install -r requirements.txt
-python main.py
-```
-
-On first run, enter the vehicle ID (for example `bus_1`). The script opens camera index 1 and falls back to index 0 if that fails. It expects the Arduino on `/dev/ttyACM0`, so change the port in `main.py` for other systems. Press Ctrl+C to stop. On exit, the script writes `state: offline` to Firebase.
-
-### PC version
-
-```bash
-pip install mediapipe opencv-python numpy requests
-python pc/injinn_pc.py
-```
-
-Press `q` in the window to quit.
-
-### Arduino
-
-1. Install the **U8g2** library from the Arduino Library Manager. `Servo` and `Wire` come with the IDE.
-2. Open `main.ino`, select Arduino Uno, and upload.
-3. The OLED shows the INJINN start-up animation, then the score.
-
-### Using another Firebase project
-
-Replace `injinn-5dab3-default-rtdb.firebaseio.com` in `main.py` (`FIREBASE_BASE_URL`) and in `INJINN.html` (`FIREBASE_URL`, `FIREBASE_BASE`). The code reads and writes without authentication, so the database rules must allow public access to `fleet/`.
-
 ## Known limitations
 
-Treat this as a classroom prototype, not a deployable product.
+This is a classroom prototype, not a deployable product.
 
 - **Location and speed**: these come from IP geolocation (`ip-api.com`) polled every 10 s, not GPS. Speed is the distance between successive IP fixes, so it is unreliable, and the speeding penalty can fire falsely or not at all.
 - **Map position**: the portal ignores the reported coordinates and places every vehicle at a fixed point on the IUT campus.
 - **Security**: the Firebase database is open, and the portal's logins are checked in client-side JavaScript. Anyone with the URL can read the fleet data or send pings.
 - **Thresholds**: the EAR, MAR and head-pose thresholds were set by hand and tested on team members only. No accuracy or false-alarm measurements were recorded.
-- **Unused overlay**: `main.py` still draws the EAR/score overlay on each frame but never displays it.
-- **Bugs in `main.py`**:
-  - `get_cloud_score()` runs before `STATUS_URL` is defined. Its bare `except` hides the error, and the score is set to 100 right after anyway, so the cloud score is never restored after a restart.
-  - `listen_for_commands` and `listen_for_arduino_sos` start before the serial port opens. Errors are swallowed, so the first ping can be lost.
-  - If the Arduino is missing, the main loop crashes on the first `arduino.write`. The code has no fallback.
-  - The SOS debounce comment says 30 s, but the code uses 3 s.
-  - `send_to_arduino()` and `current_servo_pos` are never used.
-- **Bugs in `main.ino`**:
-  - `triggerAlert()` and `alertMessage` are never used, so the OLED shows only the score and no alert text.
-  - The 200 ms beep uses `delay()`, which blocks serial reads and button polling while the buzzer sounds.
+- **Tilt only**: the camera mount tilts but does not pan, so the unit loses a driver who moves sideways out of frame.
 
 ## Project history
 
@@ -281,6 +261,8 @@ Treat this as a classroom prototype, not a deployable product.
 | 15 | Moved to Raspberry Pi 4 and Arduino. Circuit design and camera tilt mount. |
 | 16 | OLED, buzzer, SOS, serial protocol, integration, enclosure |
 
+The project was first proposed as software-only drowsiness detection. The hardware unit, portal and scoring were added during the semester.
+
 ### Code history
 
 The files in `prototypes/` record how the vision code developed. None of them talk to the Arduino.
@@ -288,10 +270,28 @@ The files in `prototypes/` record how the vision code developed. None of them ta
 | File | Stage |
 |---|---|
 | `01_blink_counter.py` | MediaPipe Tasks API test. Counts blinks with EAR < 0.25 for ≥ 2 frames. No alerts or cloud. |
-| `02_microsleep_firebase.py` | First Firebase version, hardcoded to `bus_1`. Microsleep (eyes closed > 2 s, −10) plus a "repeated long blinks" rule: two consecutive blinks of 1–2 s cost −5. No yawn or distraction detection. This rule was dropped in later versions. |
-| `03_auto_level_sim.py` | `pc/injinn_pc.py` plus a simulated camera-levelling loop. It tracks the eye-corner midpoint against a 0.45–0.55 band and adjusts a 0–1 value, but drives no hardware. `main.py` later replaced this with the servo controller described above. |
+| `02_microsleep_firebase.py` | First Firebase version, hardcoded to `bus_1`. Microsleep (eyes closed > 2 s, −10) plus a "repeated long blinks" rule: two consecutive blinks of 1–2 s cost −5. No yawn or distraction detection. The long-blink rule was dropped in later versions. |
+| `03_auto_level_sim.py` | `05_pc_demo.py` plus a simulated camera-levelling loop. It tracks the eye-corner midpoint against a 0.45–0.55 band and adjusts a 0–1 value, but drives no hardware. `main.py` later replaced this with the servo controller. |
 | `04_session_counter.py` | Alternative shift handling. Each run is numbered "Day N" or "Night N" (stored in `session_counts.json`), and the shift summary is written when the program exits, not at 06:00/18:00. |
+| `05_pc_demo.py` | PC version with a preview window and no Arduino. Used for the detection part of the demo video. |
 
-None of the versions use the thresholds stated in the course report (EAR < 0.22 for 1.5 s, MAR 0.58). Every version uses EAR < 0.25, and every version with yawn detection uses MAR > 0.5 for 2.5 s.
+### Changes after submission
 
-The project was first proposed as software-only drowsiness detection. The hardware unit, portal and scoring were added during the semester.
+The code was cleaned up after the course ended. Detection logic, thresholds, penalties and the serial protocol are unchanged.
+
+- `main.py`:
+  - Restructured with named constants, docstrings and helper functions.
+  - Added `--preview` and `--port` options, so one script now covers both the Pi and the PC.
+  - Runs without an Arduino.
+  - Resumes the cloud score after a mid-shift restart.
+  - Opens the serial port before the background threads start.
+- Firmware:
+  - Non-blocking beep, so serial reads and button polling continue while the buzzer sounds.
+  - Debounced SOS button.
+  - Unused alert-text code removed.
+- Portal:
+  - Header comment added.
+  - Leftover analytics tag from an earlier host removed.
+- Files moved into `raspberry-pi/`, `arduino/` and `portal/`.
+
+The original code is in the repository's first commit.
