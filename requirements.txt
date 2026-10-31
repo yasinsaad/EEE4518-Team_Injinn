@@ -1,0 +1,5 @@
+mediapipe>=0.10
+opencv-python
+numpy
+requests
+pyserial
