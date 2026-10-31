@@ -87,11 +87,23 @@ The webcam connects to the Raspberry Pi over USB and is mounted on the servo arm
 ## Repository layout
 
 ```
-main.py       Vision pipeline, scoring, serial and Firebase I/O (Raspberry Pi)
-main.ino      Arduino firmware: servo, buzzer, OLED, SOS button
-INJINN.html   Single-file fleet portal (Tailwind, Leaflet, Chart.js)
-docs/images/  Figures used in this README
+main.py          Vision pipeline, scoring, serial and Firebase I/O (Raspberry Pi, headless)
+main.ino         Arduino firmware: servo, buzzer, OLED, SOS button
+INJINN.html      Single-file fleet portal (Tailwind, Leaflet, Chart.js)
+pc/injinn_pc.py  Desktop version with a preview window, no Arduino (used in the demo video)
+prototypes/      Earlier development versions, see "Code history"
+docs/images/     Figures used in this README
 ```
+
+`main.py` and `pc/injinn_pc.py` share the same detection, scoring and Firebase code. The differences:
+
+| | `main.py` | `pc/injinn_pc.py` |
+|---|---|---|
+| Target | Raspberry Pi + Arduino | Windows or any PC with a webcam |
+| Preview window | none | "INJINN Fleet Edge (bus_N)" |
+| Quit | Ctrl+C | `q` in the window |
+| Camera tilt, buzzer, OLED, SOS | yes, over serial | no |
+| Owner ping | Arduino buzzer + `winsound` | `winsound` beep + on-screen text |
 
 Files created at runtime by `main.py`:
 
@@ -201,7 +213,7 @@ The portal marks a vehicle `offline` if its status has not changed for 5 minutes
 
 [YouTube, 87 s](https://youtu.be/JEI0bmbcsGw). It shows three parts:
 
-1. **Detection, 0–42 s.** A desktop window titled "INJINN Fleet Edge (bus_3)" shows the camera feed with the EAR/MAR, score and pitch/yaw overlay. Next to it, a phone shows the owner portal. The driver acts out distraction, microsleep and a yawn. The on-screen score falls 100 → 97 → 87 → 85 → 82 → 72, which matches the penalties in the table above (−3, −10, −2, −3, −10). Bus 3's portal state changes to `distracted` or `drowsy` with each alert.
+1. **Detection, 0–42 s.** `pc/injinn_pc.py` runs on a laptop in a window titled "INJINN Fleet Edge (bus_3)" shows the camera feed with the EAR/MAR, score and pitch/yaw overlay. Next to it, a phone shows the owner portal. The driver acts out distraction, microsleep and a yawn. The on-screen score falls 100 → 97 → 87 → 85 → 82 → 72, which matches the penalties in the table above (−3, −10, −2, −3, −10). Bus 3's portal state changes to `distracted` or `drowsy` with each alert.
 2. **Camera tilt, 42–72 s.** The person crouches and stands in front of the unit, and the servo tilts the webcam to follow their face. The OLED shows the live score, which changes from 70 to 60 during this segment.
 3. **SOS, 75–84 s.** Pressing the yellow button changes Bus 1 to `EMERGENCY` on the owner portal, and its map marker pulses.
 
@@ -219,6 +231,15 @@ python main.py
 ```
 
 On first run, enter the vehicle ID (for example `bus_1`). The script opens camera index 1 and falls back to index 0 if that fails. It expects the Arduino on `/dev/ttyACM0`, so change the port in `main.py` for other systems. Press Ctrl+C to stop. On exit, the script writes `state: offline` to Firebase.
+
+### PC version
+
+```bash
+pip install mediapipe opencv-python numpy requests
+python pc/injinn_pc.py
+```
+
+Press `q` in the window to quit.
 
 ### Arduino
 
@@ -238,7 +259,7 @@ Treat this as a classroom prototype, not a deployable product.
 - **Map position**: the portal ignores the reported coordinates and places every vehicle at a fixed point on the IUT campus.
 - **Security**: the Firebase database is open, and the portal's logins are checked in client-side JavaScript. Anyone with the URL can read the fleet data or send pings.
 - **Thresholds**: the EAR, MAR and head-pose thresholds were set by hand and tested on team members only. No accuracy or false-alarm measurements were recorded.
-- **Preview window**: the `main.py` in this repo draws the overlay but never calls `cv2.imshow`, so it shows no window. The "INJINN Fleet Edge (bus_N)" window in the demo video comes from a desktop build that is not committed.
+- **Unused overlay**: `main.py` still draws the EAR/score overlay on each frame but never displays it.
 - **Bugs in `main.py`**:
   - `get_cloud_score()` runs before `STATUS_URL` is defined. Its bare `except` hides the error, and the score is set to 100 right after anyway, so the cloud score is never restored after a restart.
   - `listen_for_commands` and `listen_for_arduino_sos` start before the serial port opens. Errors are swallowed, so the first ping can be lost.
@@ -259,5 +280,18 @@ Treat this as a classroom prototype, not a deployable product.
 | 14 | Web portal and Firebase backend |
 | 15 | Moved to Raspberry Pi 4 and Arduino. Circuit design and camera tilt mount. |
 | 16 | OLED, buzzer, SOS, serial protocol, integration, enclosure |
+
+### Code history
+
+The files in `prototypes/` record how the vision code developed. None of them talk to the Arduino.
+
+| File | Stage |
+|---|---|
+| `01_blink_counter.py` | MediaPipe Tasks API test. Counts blinks with EAR < 0.25 for ≥ 2 frames. No alerts or cloud. |
+| `02_microsleep_firebase.py` | First Firebase version, hardcoded to `bus_1`. Microsleep (eyes closed > 2 s, −10) plus a "repeated long blinks" rule: two consecutive blinks of 1–2 s cost −5. No yawn or distraction detection. This rule was dropped in later versions. |
+| `03_auto_level_sim.py` | `pc/injinn_pc.py` plus a simulated camera-levelling loop. It tracks the eye-corner midpoint against a 0.45–0.55 band and adjusts a 0–1 value, but drives no hardware. `main.py` later replaced this with the servo controller described above. |
+| `04_session_counter.py` | Alternative shift handling. Each run is numbered "Day N" or "Night N" (stored in `session_counts.json`), and the shift summary is written when the program exits, not at 06:00/18:00. |
+
+None of the versions use the thresholds stated in the course report (EAR < 0.22 for 1.5 s, MAR 0.58). Every version uses EAR < 0.25, and every version with yawn detection uses MAR > 0.5 for 2.5 s.
 
 The project was first proposed as software-only drowsiness detection. The hardware unit, portal and scoring were added during the semester.
