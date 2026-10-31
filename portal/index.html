@@ -10,6 +10,8 @@
   - Logins are checked in the browser and are for demonstration only.
   - Map positions use a fixed point (IUT campus) set by DEMO_LAT / DEMO_LNG.
 
+  Demo mode: demo-data.js simulates the fleet, because the Firebase backend
+  has been shut down. Remove that script tag to use a live database.
   Configuration: set FIREBASE_URL and FIREBASE_BASE in the <script> block.
   Hosting: any static host (deployed on Netlify), or open the file directly.
 -->
@@ -208,6 +210,9 @@
       </div>
     </main>
   </div>
+
+  <!-- Demo mode: answers Firebase requests with simulated data. Remove to use a live database. -->
+  <script src="demo-data.js"></script>
 
   <script>
     lucide.createIcons();

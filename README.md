@@ -8,9 +8,9 @@ Course project for **EEE 4518: Electrical and Electronic Workshop**, Department 
 
 ![Prototype](docs/images/prototype.jpg)
 
-**Demo video:** https://youtu.be/JEI0bmbcsGw
+**Demo video:** https://youtu.be/JEI0bmbcsGw  ·  **Portal demo:** https://yasinsaad.github.io/EEE4518-Team_Injinn/
 
-> **Status:** the project ended with the course. The Firebase backend has been shut down, so the deployed portal no longer shows data. This repository documents the system; to run it, set up your own Firebase project (see [Quick start](#quick-start)).
+> **Status:** the project ended with the course and its Firebase backend has been shut down. The portal demo runs on simulated fleet data in the browser. This repository documents the system; to run the full system, set up your own Firebase project (see [Quick start](#quick-start)).
 
 ## Contents
 
@@ -66,6 +66,9 @@ arduino/injinn_firmware/
   injinn_firmware.ino     Servo, buzzer, OLED and SOS button firmware
 portal/
   index.html              Single-file fleet portal
+  demo-data.js            Simulated fleet that stands in for the retired Firebase backend
+.github/workflows/
+  pages.yml               Publishes portal/ to GitHub Pages
 prototypes/               Earlier development versions (see "Code history")
 docs/images/              Figures used in this README
 ```
@@ -95,7 +98,7 @@ python main.py --preview
 
 ### Portal
 
-Open `portal/index.html` in a browser, or deploy the `portal/` folder to any static host. Log in with the credentials in [Fleet portal](#fleet-portal).
+Open `portal/index.html` in a browser, or deploy the `portal/` folder to any static host. Log in with the credentials in [Fleet portal](#fleet-portal). By default the portal runs in demo mode; to connect it to a live database, remove the `demo-data.js` script tag from `index.html`.
 
 ### Using your own Firebase project
 
@@ -197,7 +200,19 @@ fleet/
 
 ## Fleet portal
 
-![Portal screens](docs/images/portal-screens.jpg)
+Try it: https://yasinsaad.github.io/EEE4518-Team_Injinn/
+
+The hosted portal runs in **demo mode**. `demo-data.js` intercepts the portal's Firebase requests and answers them from a simulated fleet:
+- Bus 1 and Bus 2 are driving and log random incidents, using the real incident types and penalties.
+- Bus 3 is offline.
+- Pressing PING puts the target vehicle into `EMERGENCY` for a few seconds.
+- Past shift summaries are pre-filled so the leaderboard has data.
+
+The portal code itself is unchanged.
+
+![Portal on a phone during the project](docs/images/portal-screens.jpg)
+
+![Owner analytics view in demo mode](docs/images/portal-analytics.png)
 
 The portal has two logins. These demo credentials are hardcoded in the page and protect nothing:
 
@@ -294,6 +309,7 @@ The code was cleaned up after the course ended. Detection logic, thresholds, pen
 - Portal:
   - Header comment added.
   - Leftover analytics tag from an earlier host removed.
+  - Demo mode (`demo-data.js`) added, and the portal is hosted on GitHub Pages.
 - Files moved into `raspberry-pi/`, `arduino/` and `portal/`.
 
 The original code is in the repository's first commit.
