@@ -8,7 +8,9 @@ Course project for **EEE 4518: Electrical and Electronic Workshop**, Department 
 
 ![Prototype](docs/images/prototype.jpg)
 
-**Demo video:** https://youtu.be/JEI0bmbcsGw  ·  **Live portal:** https://marvelous-dolphin-44656c.netlify.app/
+**Demo video:** https://youtu.be/JEI0bmbcsGw
+
+> **Status:** the project ended with the course. The Firebase backend has been shut down, so the deployed portal no longer shows data. This repository documents the system; to run it, set up your own Firebase project (see [Quick start](#quick-start)).
 
 ## Contents
 
@@ -246,7 +248,7 @@ This is a classroom prototype, not a deployable product.
 
 - **Location and speed**: these come from IP geolocation (`ip-api.com`) polled every 10 s, not GPS. Speed is the distance between successive IP fixes, so it is unreliable, and the speeding penalty can fire falsely or not at all.
 - **Map position**: the portal ignores the reported coordinates and places every vehicle at a fixed point on the IUT campus.
-- **Security**: the Firebase database is open, and the portal's logins are checked in client-side JavaScript. Anyone with the URL can read the fleet data or send pings.
+- **Security**: the Firebase database was used without authentication, and the portal's logins are checked in client-side JavaScript. A real deployment would need Firebase Authentication and database rules.
 - **Thresholds**: the EAR, MAR and head-pose thresholds were set by hand and tested on team members only. No accuracy or false-alarm measurements were recorded.
 - **Tilt only**: the camera mount tilts but does not pan, so the unit loses a driver who moves sideways out of frame.
 
