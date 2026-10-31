@@ -2,7 +2,7 @@
 
 A dashboard-mounted unit that watches the driver through a webcam and flags microsleep, yawning and distraction. It sounds a buzzer, shows a safety score on an OLED, and tilts the camera to keep the driver's face in frame. Each unit pushes its state, score and incident log to Firebase, and a web portal shows the whole fleet to an owner and each vehicle's own data to its driver.
 
-Course project for **EEE 4518: Electrical and Electronic Workshop**, Department of EEE, Islamic University of Technology (IUT), submitted 13 April 2026.
+Built as a five-person team project at Islamic University of Technology (IUT), 2026.
 
 **Stack:** Python, MediaPipe Face Landmarker, OpenCV, Raspberry Pi 4, Arduino Uno (C++), pySerial, Firebase Realtime Database (REST), HTML/JavaScript with Tailwind CSS, Leaflet and Chart.js, Netlify.
 
@@ -10,11 +10,10 @@ Course project for **EEE 4518: Electrical and Electronic Workshop**, Department 
 
 **Demo video:** https://youtu.be/JEI0bmbcsGw  ·  **Live portal:** https://marvelous-dolphin-44656c.netlify.app/
 
-> **Status:** the project ended with the course and its Firebase backend has been shut down. The portal in this repository runs on simulated fleet data in the browser (demo mode). This repository documents the system; to run the full system, set up your own Firebase project (see [Quick start](#quick-start)).
+> **Status:** the project has ended and its Firebase backend has been shut down. The portal in this repository runs on simulated fleet data in the browser (demo mode). This repository documents the system; to run the full system, set up your own Firebase project (see [Quick start](#quick-start)).
 
 ## Contents
 
-- [Team](#team)
 - [System overview](#system-overview)
 - [Repository layout](#repository-layout)
 - [Quick start](#quick-start)
@@ -26,17 +25,7 @@ Course project for **EEE 4518: Electrical and Electronic Workshop**, Department 
 - [Fleet portal](#fleet-portal)
 - [Demonstration video](#demonstration-video)
 - [Known limitations](#known-limitations)
-- [Project history](#project-history)
-
-## Team
-
-| Member | ID | Contribution |
-|---|---|---|
-| Md. Jubair Ali Fahim | 220021203 | Initial Python codebase, alert system, SOS feature |
-| Arham Takib | 220021208 | Web portal, Firebase backend, testing |
-| Mubtasim Labib | 220021242 | Hardware prototype, 3D-printed enclosure, camera tilt control |
-| Tashfeea Ainur Rahman | 220021250 | OLED interface, tilt tuning, Pi–Arduino serial protocol |
-| Yasin Hasan Saad | 220021252 | MediaPipe vision pipeline, migration to Raspberry Pi, system integration |
+- [Development history](#development-history)
 
 ## System overview
 
@@ -104,21 +93,19 @@ Set `FIREBASE_DB_URL` in `raspberry-pi/main.py`, and `FIREBASE_URL` and `FIREBAS
 
 ## Hardware
 
-### Bill of materials
+### Components
 
-| Item | Purpose | Cost (BDT) |
-|---|---|---|
-| Raspberry Pi 4 | Runs vision pipeline and telemetry | 14,000 |
-| Arduino Uno | Peripheral controller | 1,000 |
-| 1.3" OLED, SH1106, I²C | Score display | 350 |
-| Servo motor | Camera tilt | 400 |
-| USB webcam (Logitech) | Driver camera | 2,300 |
-| Buzzer, active-low | Audible alert | 80 |
-| Power bank | Power supply | 1,500 |
-| Breadboard | Wiring | 150 |
-| 3D-printed housing | Enclosure | 900 |
-| Push button | SOS input | – |
-| **Total** | | **20,680** |
+| Component | Purpose |
+|---|---|
+| Raspberry Pi 4 | Runs vision pipeline and telemetry |
+| Arduino Uno | Peripheral controller |
+| 1.3" OLED, SH1106, I²C | Score display |
+| Servo motor | Camera tilt |
+| USB webcam (Logitech) | Driver camera |
+| Active-low buzzer | Audible alert |
+| Push button | SOS input |
+| Power bank | Power supply |
+| 3D-printed housing | Enclosure |
 
 ### Arduino pin map
 
@@ -265,18 +252,9 @@ This is a classroom prototype, not a deployable product.
 - **Thresholds**: the EAR, MAR and head-pose thresholds were set by hand and tested on team members only. No accuracy or false-alarm measurements were recorded.
 - **Tilt only**: the camera mount tilts but does not pan, so the unit loses a driver who moves sideways out of frame.
 
-## Project history
+## Development history
 
-| Weeks | Work |
-|---|---|
-| 1–7 | Python and OpenCV environment for blink tracking |
-| 8 | MediaPipe vision pipeline |
-| 9–13 | Attempted deployment on an Nvidia Jetson Nano, abandoned due to faulty hardware |
-| 14 | Web portal and Firebase backend |
-| 15 | Moved to Raspberry Pi 4 and Arduino. Circuit design and camera tilt mount. |
-| 16 | OLED, buzzer, SOS, serial protocol, integration, enclosure |
-
-The project was first proposed as software-only drowsiness detection. The hardware unit, portal and scoring were added during the semester.
+The project started as software-only drowsiness detection on a PC. A port to an Nvidia Jetson Nano was abandoned because of faulty hardware, and the system moved to a Raspberry Pi 4 with an Arduino for peripherals.
 
 ### Code history
 
@@ -290,9 +268,9 @@ The files in `prototypes/` record how the vision code developed. None of them ta
 | `04_session_counter.py` | Alternative shift handling. Each run is numbered "Day N" or "Night N" (stored in `session_counts.json`), and the shift summary is written when the program exits, not at 06:00/18:00. |
 | `05_pc_demo.py` | PC version with a preview window and no Arduino. Used for the detection part of the demo video. |
 
-### Changes after submission
+### Later cleanup
 
-The code was cleaned up after the course ended. Detection logic, thresholds, penalties and the serial protocol are unchanged.
+The code was cleaned up after the project ended. Detection logic, thresholds, penalties and the serial protocol are unchanged.
 
 - `main.py`:
   - Restructured with named constants, docstrings and helper functions.
